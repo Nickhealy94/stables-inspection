@@ -181,6 +181,20 @@ body { font-family: Arial, sans-serif; background: #f0f2f5; color: #222; font-si
   </div>
 
   <div class="card">
+    <label>Stable dimensions</label>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <div style="flex:1;">
+        <div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;">Length (m)</div>
+        <input type="number" min="0" step="0.1" id="stableLength" placeholder="0.0" oninput="setDimension('length',this.value)" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:7px 9px;font-size:14px;text-align:center;">
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:10px;color:#999;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;">Width (m)</div>
+        <input type="number" min="0" step="0.1" id="stableWidth" placeholder="0.0" oninput="setDimension('width',this.value)" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:7px 9px;font-size:14px;text-align:center;">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <label>Inspector notes</label>
     <textarea id="inspNotes" placeholder="Observations for this stable..." oninput="setNotes()"></textarea>
   </div>
@@ -300,7 +314,7 @@ function ensureStable(n) {
         defects[ci + "_" + di] = {on: false, qty: 0, sqm: 0, note: "", photos: []};
       }
     }
-    DB[k] = {cond: r.cond, notes: "", urgent: false, complete: false, stamp: null, defects: defects};
+    DB[k] = {cond: r.cond, notes: "", urgent: false, complete: false, stamp: null, length: "", width: "", defects: defects};
   }
   return DB[k];
 }
@@ -500,6 +514,11 @@ function setNotes() {
   save();
 }
 
+function setDimension(field, val) {
+  ensureStable(cur)[field] = val;
+  save();
+}
+
 function tickDefect(ci, di) {
   var s = ensureStable(cur);
   var k = ci + "_" + di;
@@ -574,6 +593,8 @@ function renderInspect() {
   document.getElementById("dcount").textContent = dcount(cur);
   document.getElementById("btnComplete").className = "sbtn complete" + (s.complete ? " on" : "");
   document.getElementById("inspNotes").value = s.notes;
+  document.getElementById("stableLength").value = s.length || "";
+  document.getElementById("stableWidth").value = s.width || "";
 
   var rn = REPORT[cur];
   var rnEl = document.getElementById("rnote");
@@ -623,11 +644,11 @@ function renderInspect() {
         html += "<button onclick='stepVal(" + ci + "," + di + ",&quot;qty&quot;,1)'>+</button>";
         html += "</div></div>";
 
-        // SQM stepper
-        html += "<div class='qgroup'><div class='qlabel'>m&#178; / lm</div>";
+        // % Affected stepper
+        html += "<div class='qgroup'><div class='qlabel'>% Affected</div>";
         html += "<div class='stepper'>";
         html += "<button onclick='stepVal(" + ci + "," + di + ",&quot;sqm&quot;,-1)'>&#8722;</button>";
-        html += "<input type='number' min='0' id='sqm_" + dk + "' value='" + (d.sqm || 0) + "' oninput='setVal(" + ci + "," + di + ",&quot;sqm&quot;,this.value)'>";
+        html += "<input type='number' min='0' max='100' id='sqm_" + dk + "' value='" + (d.sqm || 0) + "' oninput='setVal(" + ci + "," + di + ",&quot;sqm&quot;,this.value)'>";
         html += "<button onclick='stepVal(" + ci + "," + di + ",&quot;sqm&quot;,1)'>+</button>";
         html += "</div></div>";
 
@@ -700,7 +721,7 @@ function exportXLSX() {
   var COND_LABEL = {serviceable: "Serviceable", fair: "Fair", poor: "Poor", eol: "End of life", na: "N/A"};
 
   // Sheet 1: Defect log
-  var defectRows = [["Stable", "Inspector", "Date Inspected", "Complete", "Category", "Defect", "Qty (No.)", "Qty (m²/lm)", "Notes", "Photos"]];
+  var defectRows = [["Stable", "Date Inspected", "Category", "Defect", "Qty (No.)", "% Affected Structure", "Notes"]];
   for (var i = 1; i <= NUM; i++) {
     var s = ensureStable(i);
     for (var ci = 0; ci < CATS.length; ci++) {
@@ -709,15 +730,12 @@ function exportXLSX() {
         if (d && d.on) {
           defectRows.push([
             "Stable " + i,
-            inspector,
             s.stamp || "",
-            s.complete ? "Yes" : "No",
             CATS[ci].name,
             CATS[ci].items[di],
             d.qty || 0,
             d.sqm || 0,
-            d.note || "",
-            d.photos.length
+            d.note || ""
           ]);
         }
       }
@@ -725,26 +743,25 @@ function exportXLSX() {
   }
 
   // Sheet 2: Summary per stable
-  var summaryRows = [["Stable", "Inspector", "Date Inspected", "Complete", "Total Defects", "Steel Defects", "Concrete/Masonry Defects", "Misc Defects", "Other Defects", "Total Photos", "Notes"]];
+  var summaryRows = [["Stable", "Date Inspected", "Length (m)", "Width (m)", "Total Defects", "Steel Defects", "Concrete/Masonry Defects", "Misc Defects", "Other Defects", "Notes"]];
   for (var i = 1; i <= NUM; i++) {
     var s = ensureStable(i);
     var totals = [0, 0, 0, 0];
-    var photos = 0;
     for (var ci = 0; ci < CATS.length; ci++) {
       for (var di = 0; di < CATS[ci].items.length; di++) {
         var d = s.defects[ci + "_" + di];
-        if (d && d.on) { totals[ci]++; photos += d.photos.length; }
+        if (d && d.on) { totals[ci]++; }
       }
     }
     var total = totals[0] + totals[1] + totals[2] + totals[3];
+    if (total === 0 && !s.notes && !s.length && !s.width) continue;
     summaryRows.push([
       "Stable " + i,
-      inspector,
       s.stamp || "",
-      s.complete ? "Yes" : "No",
+      s.length || "",
+      s.width || "",
       total,
       totals[0], totals[1], totals[2], totals[3],
-      photos,
       s.notes || ""
     ]);
   }
@@ -753,13 +770,11 @@ function exportXLSX() {
   var ws1 = XLSX.utils.aoa_to_sheet(defectRows);
   var ws2 = XLSX.utils.aoa_to_sheet(summaryRows);
 
-  // Column widths for defect sheet
   ws1["!cols"] = [
-    {wch:10},{wch:16},{wch:18},{wch:10},{wch:22},{wch:36},{wch:10},{wch:10},{wch:30},{wch:8}
+    {wch:10},{wch:18},{wch:22},{wch:36},{wch:10},{wch:20},{wch:30}
   ];
-  // Column widths for summary sheet
   ws2["!cols"] = [
-    {wch:10},{wch:16},{wch:18},{wch:10},{wch:14},{wch:14},{wch:22},{wch:12},{wch:12},{wch:12},{wch:36}
+    {wch:10},{wch:18},{wch:12},{wch:12},{wch:14},{wch:14},{wch:22},{wch:12},{wch:12},{wch:36}
   ];
 
   XLSX.utils.book_append_sheet(wb, ws1, "Defect Log");
@@ -827,18 +842,91 @@ function exportWord() {
     return "<w:p><w:r><w:br w:type='page'/></w:r></w:p>";
   }
 
-  // Build image XML from base64 data URL
-  function imgXml(dataUrl, imgId) {
-    var base64 = dataUrl.split(",")[1];
-    var ext = dataUrl.indexOf("image/png") > -1 ? "png" : "jpeg";
-    var relType = ext === "png" ? "image/png" : "image/jpeg";
-    return {base64: base64, ext: ext, relType: relType, id: imgId};
+  // Compress image, fix EXIF orientation, return base64 jpeg
+  function processImage(dataUrl, callback) {
+    var img = new Image();
+    img.onload = function() {
+      // Read EXIF orientation from dataUrl bytes
+      var orientation = 1;
+      try {
+        var arr = atob(dataUrl.split(",")[1]);
+        var bytes = new Uint8Array(arr.length);
+        for (var i = 0; i < arr.length; i++) bytes[i] = arr.charCodeAt(i);
+        // Scan for EXIF orientation tag (0x0112)
+        for (var i = 0; i < bytes.length - 8; i++) {
+          if (bytes[i] === 0xFF && bytes[i+1] === 0xE1) {
+            var exifStart = i + 10;
+            var littleEndian = bytes[exifStart] === 0x49;
+            var readU16 = function(o) {
+              return littleEndian ? bytes[o] | (bytes[o+1]<<8) : (bytes[o]<<8) | bytes[o+1];
+            };
+            var readU32 = function(o) {
+              return littleEndian ? bytes[o]|(bytes[o+1]<<8)|(bytes[o+2]<<16)|(bytes[o+3]<<24) :
+                (bytes[o]<<24)|(bytes[o+1]<<16)|(bytes[o+2]<<8)|bytes[o+3];
+            };
+            var ifdOffset = exifStart + readU32(exifStart + 4);
+            var numEntries = readU16(ifdOffset);
+            for (var e = 0; e < numEntries; e++) {
+              var entryOffset = ifdOffset + 2 + e * 12;
+              if (readU16(entryOffset) === 0x0112) {
+                orientation = readU16(entryOffset + 8);
+                break;
+              }
+            }
+            break;
+          }
+        }
+      } catch(e) {}
+
+      var canvas = document.createElement("canvas");
+      var ctx = canvas.getContext("2d");
+      var w = img.naturalWidth;
+      var h = img.naturalHeight;
+
+      // Rotate canvas based on orientation
+      if (orientation >= 5 && orientation <= 8) {
+        canvas.width = h; canvas.height = w;
+      } else {
+        canvas.width = w; canvas.height = h;
+      }
+      ctx.save();
+      switch (orientation) {
+        case 2: ctx.transform(-1,0,0,1,w,0); break;
+        case 3: ctx.transform(-1,0,0,-1,w,h); break;
+        case 4: ctx.transform(1,0,0,-1,0,h); break;
+        case 5: ctx.transform(0,1,1,0,0,0); break;
+        case 6: ctx.transform(0,1,-1,0,h,0); break;
+        case 7: ctx.transform(0,-1,-1,0,h,w); break;
+        case 8: ctx.transform(0,-1,1,0,0,w); break;
+      }
+      ctx.drawImage(img, 0, 0);
+      ctx.restore();
+
+      // Scale down if larger than 1200px on longest side
+      var maxDim = 1200;
+      var cw = canvas.width, ch = canvas.height;
+      if (cw > maxDim || ch > maxDim) {
+        var scale = maxDim / Math.max(cw, ch);
+        var canvas2 = document.createElement("canvas");
+        canvas2.width = Math.round(cw * scale);
+        canvas2.height = Math.round(ch * scale);
+        canvas2.getContext("2d").drawImage(canvas, 0, 0, canvas2.width, canvas2.height);
+        canvas = canvas2;
+      }
+
+      var compressed = canvas.toDataURL("image/jpeg", 0.72);
+      callback(compressed);
+    };
+    img.onerror = function() { callback(dataUrl); };
+    img.src = dataUrl;
   }
 
-  // Collect all images
+  // Collect and process all images async, then build doc
   var images = [];
   var imgIdCounter = 1;
   var stableImgMap = {};
+  var photoQueue = [];
+
   for (var i = 0; i < stablesDone.length; i++) {
     var n = stablesDone[i];
     var s = ensureStable(n);
@@ -849,190 +937,209 @@ function exportWord() {
         if (d && d.on && d.photos && d.photos.length > 0) {
           stableImgMap[n][ci + "_" + di] = [];
           for (var pi = 0; pi < d.photos.length; pi++) {
-            var imgData = imgXml(d.photos[pi], imgIdCounter++);
-            images.push(imgData);
-            stableImgMap[n][ci + "_" + di].push(imgData);
+            photoQueue.push({
+              stableN: n, key: ci + "_" + di,
+              dataUrl: d.photos[pi], id: imgIdCounter++
+            });
           }
         }
       }
     }
+  }
+
+  function processQueue(idx, done) {
+    if (idx >= photoQueue.length) { done(); return; }
+    var item = photoQueue[idx];
+    processImage(item.dataUrl, function(compressed) {
+      var base64 = compressed.split(",")[1];
+      var imgData = {base64: base64, ext: "jpeg", id: item.id};
+      images.push(imgData);
+      if (!stableImgMap[item.stableN][item.key]) stableImgMap[item.stableN][item.key] = [];
+      stableImgMap[item.stableN][item.key].push(imgData);
+      processQueue(idx + 1, done);
+    });
+  }
+
+  processQueue(0, function() {
+    buildWordDoc(body, images, stableImgMap, relsXml, stablesDone, totalDefects, totalPhotos, dateStr);
+  });
+
+  function drawingXml(rId, imgId, cx, cy) {
+    var xml = "<w:r><w:rPr></w:rPr><w:drawing><wp:inline xmlns:wp='http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing'>";
+    xml += "<wp:extent cx='" + cx + "' cy='" + cy + "'/>";
+    xml += "<wp:docPr id='" + imgId + "' name='Image" + imgId + "'/>";
+    xml += "<a:graphic xmlns:a='http://schemas.openxmlformats.org/drawingml/2006/main'>";
+    xml += "<a:graphicData uri='http://schemas.openxmlformats.org/drawingml/2006/picture'>";
+    xml += "<pic:pic xmlns:pic='http://schemas.openxmlformats.org/drawingml/2006/picture'>";
+    xml += "<pic:nvPicPr><pic:cNvPr id='" + imgId + "' name='Photo'/><pic:cNvPicPr/></pic:nvPicPr>";
+    xml += "<pic:blipFill><a:blip r:embed='" + rId + "' xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships'/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>";
+    xml += "<pic:spPr><a:xfrm><a:off x='0' y='0'/><a:ext cx='" + cx + "' cy='" + cy + "'/></a:xfrm>";
+    xml += "<a:prstGeom prst='rect'><a:avLst/></a:prstGeom></pic:spPr></pic:pic>";
+    xml += "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>";
+    return xml;
   }
 
   // Build document body XML
-  var body = "";
+  function buildWordDoc(images, stableImgMap) {
+    var body = "";
 
-  // Title block
-  body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='1F3864'/><w:spacing w:before='120' w:after='120'/></w:pPr>";
-  body += "<w:r><w:rPr><w:b/><w:color w:val='FFFFFF'/><w:sz w:val='40'/><w:szCs w:val='40'/></w:rPr><w:t>Flemington Stables — Structural Inspection Report</w:t></w:r></w:p>";
-  body += para("Flemington Racecourse, 400 Epsom Road, Flemington VIC 3031", null, "555555", "18", false, [40, 40]);
+    // Title block
+    body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='1F3864'/><w:spacing w:before='120' w:after='120'/></w:pPr>";
+    body += "<w:r><w:rPr><w:b/><w:color w:val='FFFFFF'/><w:sz w:val='40'/><w:szCs w:val='40'/></w:rPr><w:t>Flemington Stables — Structural Inspection Report</w:t></w:r></w:p>";
+    body += para("Flemington Racecourse, 400 Epsom Road, Flemington VIC 3031", null, "555555", "18", false, [40, 40]);
 
-  // Meta table
-  body += "<w:tbl><w:tblPr><w:tblW w:w='9360' w:type='dxa'/><w:tblBorders><w:top w:val='single' w:sz='4' w:color='DDDDDD'/><w:left w:val='single' w:sz='4' w:color='DDDDDD'/><w:bottom w:val='single' w:sz='4' w:color='DDDDDD'/><w:right w:val='single' w:sz='4' w:color='DDDDDD'/><w:insideH w:val='single' w:sz='4' w:color='DDDDDD'/><w:insideV w:val='single' w:sz='4' w:color='DDDDDD'/></w:tblBorders></w:tblPr>";
-  body += "<w:tr>" + tcColour("Date","1F3864","FFFFFF",true,"2340") + tcColour("Stables Inspected","1F3864","FFFFFF",true,"2340") + tcColour("Total Defects","1F3864","FFFFFF",true,"2340") + tcColour("Total Photos","1F3864","FFFFFF",true,"2340") + "</w:tr>";
-  body += "<w:tr>" + tc(dateStr,"","",false,"2340") + tc(stablesDone.length+" of "+NUM,"","",false,"2340") + tc(totalDefects,"","",false,"2340") + tc(totalPhotos,"","",false,"2340") + "</w:tr>";
-  body += "</w:tbl>";
-  body += para("", null, null, null, false, [80, 0]);
+    // Meta table
+    var TBL_BORDERS = "<w:tblBorders><w:top w:val='single' w:sz='4' w:color='DDDDDD'/><w:left w:val='single' w:sz='4' w:color='DDDDDD'/><w:bottom w:val='single' w:sz='4' w:color='DDDDDD'/><w:right w:val='single' w:sz='4' w:color='DDDDDD'/><w:insideH w:val='single' w:sz='4' w:color='DDDDDD'/><w:insideV w:val='single' w:sz='4' w:color='DDDDDD'/></w:tblBorders>";
+    var TBL4 = "<w:tblGrid><w:gridCol w:w='3960'/><w:gridCol w:w='1200'/><w:gridCol w:w='1200'/><w:gridCol w:w='3000'/></w:tblGrid>";
+    var TBL_META = "<w:tblGrid><w:gridCol w:w='2340'/><w:gridCol w:w='2340'/><w:gridCol w:w='2340'/><w:gridCol w:w='2340'/></w:tblGrid>";
+    var TBL_SUM = "<w:tblGrid><w:gridCol w:w='1200'/><w:gridCol w:w='1800'/><w:gridCol w:w='1000'/><w:gridCol w:w='1000'/><w:gridCol w:w='900'/><w:gridCol w:w='3460'/></w:tblGrid>";
+    body += "<w:tbl><w:tblPr><w:tblW w:w='9360' w:type='dxa'/>" + TBL_BORDERS + "</w:tblPr>" + TBL_META;
+    body += "<w:tr>" + tcColour("Date","1F3864","FFFFFF",true,"2340") + tcColour("Stables Inspected","1F3864","FFFFFF",true,"2340") + tcColour("Total Defects","1F3864","FFFFFF",true,"2340") + tcColour("Total Photos","1F3864","FFFFFF",true,"2340") + "</w:tr>";
+    body += "<w:tr>" + tc(dateStr,"","",false,"2340") + tc(stablesDone.length+" of "+NUM,"","",false,"2340") + tc(totalDefects,"","",false,"2340") + tc(totalPhotos,"","",false,"2340") + "</w:tr>";
+    body += "</w:tbl>";
+    body += para("", null, null, null, false, [80, 0]);
 
-  // Summary table
-  body += "<w:tbl><w:tblPr><w:tblW w:w='9360' w:type='dxa'/><w:tblBorders><w:top w:val='single' w:sz='4' w:color='DDDDDD'/><w:left w:val='single' w:sz='4' w:color='DDDDDD'/><w:bottom w:val='single' w:sz='4' w:color='DDDDDD'/><w:right w:val='single' w:sz='4' w:color='DDDDDD'/><w:insideH w:val='single' w:sz='4' w:color='DDDDDD'/><w:insideV w:val='single' w:sz='4' w:color='DDDDDD'/></w:tblBorders></w:tblPr>";
-  body += "<w:tr>" + tcColour("Stable","1F3864","FFFFFF",true,"1200") + tcColour("EF Condition","1F3864","FFFFFF",true,"1500") + tcColour("Defects","1F3864","FFFFFF",true,"1000") + tcColour("Photos","1F3864","FFFFFF",true,"1000") + tcColour("Complete","1F3864","FFFFFF",true,"1000") + tcColour("Date Inspected","1F3864","FFFFFF",true,"3660") + "</w:tr>";
-
-  for (var i = 0; i < stablesDone.length; i++) {
-    var n = stablesDone[i];
-    var s = ensureStable(n);
-    var dc = 0, pc = 0;
-    for (var k in s.defects) { if (s.defects[k].on) { dc++; pc += s.defects[k].photos.length; } }
-    var bg = i % 2 === 1 ? "F5F6FA" : "FFFFFF";
-    body += "<w:tr>" + tc("Stable "+n,bg,"",true,"1200") + tc(COND_LABEL[s.cond||"na"],bg,"",false,"1500") + tc(dc,bg,"",false,"1000") + tc(pc,bg,"",false,"1000") + tc(s.complete?"Yes":"No",bg,"",false,"1000") + tc(s.stamp||"—",bg,"",false,"3660") + "</w:tr>";
-  }
-  body += "</w:tbl>";
-
-  // Per-stable sections
-  for (var i = 0; i < stablesDone.length; i++) {
-    var n = stablesDone[i];
-    var s = ensureStable(n);
-    var rpt = REPORT[n];
-    var dc = 0;
-    for (var k in s.defects) { if (s.defects[k].on) dc++; }
-
-    body += pageBreak();
-
-    // Stable header
-    body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='1F3864'/><w:spacing w:before='80' w:after='80'/></w:pPr>";
-    body += "<w:r><w:rPr><w:b/><w:color w:val='FFFFFF'/><w:sz w:val='32'/><w:szCs w:val='32'/></w:rPr><w:t xml:space='preserve'>Stable " + n + (s.complete ? "   ✓ Complete" : "") + "</w:t></w:r></w:p>";
-    if (s.stamp) {
-      body += para("Inspected: " + s.stamp + "   |   " + dc + " defect" + (dc!==1?"s":"") + " recorded", null, "666666", "16", false, [40,40]);
+    // Summary table
+    body += "<w:tbl><w:tblPr><w:tblW w:w='9360' w:type='dxa'/>" + TBL_BORDERS + "</w:tblPr>" + TBL_SUM;
+    body += "<w:tr>" + tcColour("Stable","1F3864","FFFFFF",true,"1200") + tcColour("EF Condition","1F3864","FFFFFF",true,"1800") + tcColour("Length (m)","1F3864","FFFFFF",true,"1000") + tcColour("Width (m)","1F3864","FFFFFF",true,"1000") + tcColour("Defects","1F3864","FFFFFF",true,"900") + tcColour("Date Inspected","1F3864","FFFFFF",true,"3460") + "</w:tr>";
+    for (var i = 0; i < stablesDone.length; i++) {
+      var n = stablesDone[i];
+      var s = ensureStable(n);
+      var dc = 0;
+      for (var k in s.defects) { if (s.defects[k].on) dc++; }
+      var bg = i % 2 === 1 ? "F5F6FA" : "FFFFFF";
+      body += "<w:tr>" + tc("Stable "+n,bg,"",true,"1200") + tc(COND_LABEL[s.cond||"na"],bg,"",false,"1800") + tc(s.length||"—",bg,"",false,"1000") + tc(s.width||"—",bg,"",false,"1000") + tc(dc,bg,"",false,"900") + tc(s.stamp||"—",bg,"",false,"3460") + "</w:tr>";
     }
+    body += "</w:tbl>";
 
-    // EF note
-    if (rpt && rpt.notes) {
-      body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='FFFBE6'/><w:spacing w:before='60' w:after='20'/><w:ind w:left='120' w:right='120'/></w:pPr><w:r><w:rPr><w:b/><w:color w:val='A07000'/><w:sz w:val='16'/><w:szCs w:val='16'/></w:rPr><w:t>ENGINEERING FOLK ASSESSMENT (NOV 2025)</w:t></w:r></w:p>";
-      body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='FFFBE6'/><w:spacing w:before='0' w:after='60'/><w:ind w:left='120' w:right='120'/></w:pPr><w:r><w:rPr><w:color w:val='7A5800'/><w:sz w:val='18'/><w:szCs w:val='18'/></w:rPr><w:t xml:space='preserve'>" + xmlEsc(rpt.notes) + "</w:t></w:r></w:p>";
-    }
+    // Per-stable sections
+    for (var i = 0; i < stablesDone.length; i++) {
+      var n = stablesDone[i];
+      var s = ensureStable(n);
+      var rpt = REPORT[n];
+      var dc = 0;
+      for (var k in s.defects) { if (s.defects[k].on) dc++; }
 
-    // Inspector notes
-    if (s.notes) {
-      body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='F5F5F5'/><w:spacing w:before='60' w:after='20'/><w:ind w:left='120'/></w:pPr><w:r><w:rPr><w:b/><w:color w:val='888888'/><w:sz w:val='16'/></w:rPr><w:t>INSPECTOR NOTES</w:t></w:r></w:p>";
-      body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='F5F5F5'/><w:spacing w:before='0' w:after='60'/><w:ind w:left='120'/></w:pPr><w:r><w:rPr><w:sz w:val='18'/><w:szCs w:val='18'/></w:rPr><w:t xml:space='preserve'>" + xmlEsc(s.notes) + "</w:t></w:r></w:p>";
-    }
+      body += pageBreak();
 
-    // Defect categories
-    for (var ci = 0; ci < CATS.length; ci++) {
-      var catDefects = [];
-      for (var di = 0; di < CATS[ci].items.length; di++) {
-        var d = s.defects[ci + "_" + di];
-        if (d && d.on) catDefects.push({key: ci+"_"+di, item: CATS[ci].items[di], d: d});
+      // Stable header
+      body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='1F3864'/><w:spacing w:before='80' w:after='80'/></w:pPr>";
+      body += "<w:r><w:rPr><w:b/><w:color w:val='FFFFFF'/><w:sz w:val='32'/><w:szCs w:val='32'/></w:rPr><w:t xml:space='preserve'>Stable " + n + (s.complete ? "   ✓ Complete" : "") + "</w:t></w:r></w:p>";
+      if (s.stamp) {
+        body += para("Inspected: " + s.stamp + "   |   " + dc + " defect" + (dc!==1?"s":"") + " recorded", null, "666666", "16", false, [40,40]);
       }
-      if (catDefects.length === 0) continue;
+      if (s.length || s.width) {
+        body += para("Dimensions: " + (s.length||"?") + "m (L) x " + (s.width||"?") + "m (W)", null, "444444", "17", false, [20,40]);
+      }
 
-      // Category header row
-      body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='" + CAT_COLORS_HEX[ci] + "'/><w:spacing w:before='60' w:after='20'/><w:ind w:left='120'/></w:pPr>";
-      body += "<w:r><w:rPr><w:b/><w:color w:val='FFFFFF'/><w:sz w:val='20'/><w:szCs w:val='20'/></w:rPr><w:t>" + xmlEsc(CATS[ci].name.toUpperCase()) + "</w:t></w:r></w:p>";
+      // EF note
+      if (rpt && rpt.notes) {
+        body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='FFFBE6'/><w:spacing w:before='60' w:after='20'/><w:ind w:left='120' w:right='120'/></w:pPr><w:r><w:rPr><w:b/><w:color w:val='A07000'/><w:sz w:val='16'/><w:szCs w:val='16'/></w:rPr><w:t>ENGINEERING FOLK ASSESSMENT (NOV 2025)</w:t></w:r></w:p>";
+        body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='FFFBE6'/><w:spacing w:before='0' w:after='60'/><w:ind w:left='120' w:right='120'/></w:pPr><w:r><w:rPr><w:color w:val='7A5800'/><w:sz w:val='18'/><w:szCs w:val='18'/></w:rPr><w:t xml:space='preserve'>" + xmlEsc(rpt.notes) + "</w:t></w:r></w:p>";
+      }
 
-      // Defect table
-      body += "<w:tbl><w:tblPr><w:tblW w:w='9360' w:type='dxa'/><w:tblBorders><w:top w:val='single' w:sz='4' w:color='DDDDDD'/><w:left w:val='single' w:sz='4' w:color='DDDDDD'/><w:bottom w:val='single' w:sz='4' w:color='DDDDDD'/><w:right w:val='single' w:sz='4' w:color='DDDDDD'/><w:insideH w:val='single' w:sz='4' w:color='DDDDDD'/><w:insideV w:val='single' w:sz='4' w:color='DDDDDD'/></w:tblBorders></w:tblPr>";
-      // Header row
-      body += "<w:tr>" + tcColour("Defect","444444","FFFFFF",true,"3960") + tcColour("Qty (No.)","444444","FFFFFF",true,"1200") + tcColour("m²/lm","444444","FFFFFF",true,"1200") + tcColour("Notes","444444","FFFFFF",true,"3000") + "</w:tr>";
+      // Inspector notes
+      if (s.notes) {
+        body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='F5F5F5'/><w:spacing w:before='60' w:after='20'/><w:ind w:left='120'/></w:pPr><w:r><w:rPr><w:b/><w:color w:val='888888'/><w:sz w:val='16'/></w:rPr><w:t>INSPECTOR NOTES</w:t></w:r></w:p>";
+        body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='F5F5F5'/><w:spacing w:before='0' w:after='60'/><w:ind w:left='120'/></w:pPr><w:r><w:rPr><w:sz w:val='18'/><w:szCs w:val='18'/></w:rPr><w:t xml:space='preserve'>" + xmlEsc(s.notes) + "</w:t></w:r></w:p>";
+      }
 
-      for (var j = 0; j < catDefects.length; j++) {
-        var item = catDefects[j].item;
-        var d = catDefects[j].d;
-        var key = catDefects[j].key;
-        var bg = j % 2 === 1 ? "F9F9FB" : "FFFFFF";
-        body += "<w:tr>" + tc(item,bg,"",true,"3960") + tc(d.qty||"—",bg,"",false,"1200") + tc(d.sqm||"—",bg,"",false,"1200") + tc(d.note||"",bg,"",false,"3000") + "</w:tr>";
-
-        // Photo row
-        var imgs = stableImgMap[n] && stableImgMap[n][key];
-        if (imgs && imgs.length > 0) {
-          body += "<w:tr><w:tc><w:tcPr><w:tcW w:w='9360' w:type='dxa'/><w:gridSpan w:val='4'/><w:shd w:val='clear' w:color='auto' w:fill='FAFAFA'/></w:tcPr><w:p><w:pPr><w:spacing w:before='60' w:after='60'/></w:pPr>";
-          for (var pi = 0; pi < imgs.length; pi++) {
-            var img = imgs[pi];
-            var rId = "rId" + img.id;
-            body += "<w:r><w:rPr></w:rPr><w:drawing><wp:inline xmlns:wp='http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing'>";
-            body += "<wp:extent cx='1600000' cy='1200000'/>";
-            body += "<wp:docPr id='" + img.id + "' name='Image" + img.id + "'/>";
-            body += "<a:graphic xmlns:a='http://schemas.openxmlformats.org/drawingml/2006/main'>";
-            body += "<a:graphicData uri='http://schemas.openxmlformats.org/drawingml/2006/picture'>";
-            body += "<pic:pic xmlns:pic='http://schemas.openxmlformats.org/drawingml/2006/picture'>";
-            body += "<pic:nvPicPr><pic:cNvPr id='" + img.id + "' name='Photo'/><pic:cNvPicPr/></pic:nvPicPr>";
-            body += "<pic:blipFill><a:blip r:embed='" + rId + "' xmlns:r='http://schemas.openxmlformats.org/officeDocument/2006/relationships'/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>";
-            body += "<pic:spPr><a:xfrm><a:off x='0' y='0'/><a:ext cx='1600000' cy='1200000'/></a:xfrm>";
-            body += "<a:prstGeom prst='rect'><a:avLst/></a:prstGeom></pic:spPr></pic:pic>";
-            body += "</a:graphicData></a:graphic></wp:inline></w:drawing></w:r>";
-          }
-          body += "</w:p></w:tc></w:tr>";
+      // Defect categories
+      for (var ci = 0; ci < CATS.length; ci++) {
+        var catDefects = [];
+        for (var di = 0; di < CATS[ci].items.length; di++) {
+          var d = s.defects[ci + "_" + di];
+          if (d && d.on) catDefects.push({key: ci+"_"+di, item: CATS[ci].items[di], d: d});
         }
+        if (catDefects.length === 0) continue;
+
+        body += "<w:p><w:pPr><w:shd w:val='clear' w:color='auto' w:fill='" + CAT_COLORS_HEX[ci] + "'/><w:spacing w:before='60' w:after='20'/><w:ind w:left='120'/></w:pPr>";
+        body += "<w:r><w:rPr><w:b/><w:color w:val='FFFFFF'/><w:sz w:val='20'/><w:szCs w:val='20'/></w:rPr><w:t>" + xmlEsc(CATS[ci].name.toUpperCase()) + "</w:t></w:r></w:p>";
+
+        body += "<w:tbl><w:tblPr><w:tblW w:w='9360' w:type='dxa'/>" + TBL_BORDERS + "</w:tblPr>" + TBL4;
+        body += "<w:tr>" + tcColour("Defect","444444","FFFFFF",true,"3960") + tcColour("Qty (No.)","444444","FFFFFF",true,"1200") + tcColour("% Affected","444444","FFFFFF",true,"1200") + tcColour("Notes","444444","FFFFFF",true,"3000") + "</w:tr>";
+
+        for (var j = 0; j < catDefects.length; j++) {
+          var item = catDefects[j].item;
+          var d = catDefects[j].d;
+          var key = catDefects[j].key;
+          var bg = j % 2 === 1 ? "F9F9FB" : "FFFFFF";
+          body += "<w:tr>" + tc(item,bg,"",true,"3960") + tc(d.qty||"—",bg,"",false,"1200") + tc(d.sqm ? d.sqm+"%" : "—",bg,"",false,"1200") + tc(d.note||"",bg,"",false,"3000") + "</w:tr>";
+
+          // Photos row — span all 4 cols using gridSpan
+          var imgs = stableImgMap[n] && stableImgMap[n][key];
+          if (imgs && imgs.length > 0) {
+            body += "<w:tr>";
+            body += "<w:tc><w:tcPr><w:tcW w:w='9360' w:type='dxa'/><w:gridSpan w:val='4'/><w:shd w:val='clear' w:color='auto' w:fill='FAFAFA'/></w:tcPr>";
+            body += "<w:p><w:pPr><w:spacing w:before='60' w:after='60'/></w:pPr>";
+            for (var pi = 0; pi < imgs.length; pi++) {
+              body += drawingXml("rId"+imgs[pi].id, imgs[pi].id, 1600000, 1200000);
+              if (pi < imgs.length - 1) body += "<w:r><w:t xml:space='preserve'>  </w:t></w:r>";
+            }
+            body += "</w:p></w:tc>";
+            body += "</w:tr>";
+          }
+        }
+        body += "</w:tbl>";
+        body += para("", null, null, null, false, [40, 0]);
       }
-      body += "</w:tbl>";
-      body += para("", null, null, null, false, [40, 0]);
     }
+
+    // Build relationships XML
+    var relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    relsXml += '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+    relsXml += '<Relationship Id="rId0" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
+    for (var i = 0; i < images.length; i++) {
+      relsXml += '<Relationship Id="rId' + images[i].id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image' + images[i].id + '.' + images[i].ext + '"/>';
+    }
+    relsXml += '</Relationships>';
+
+    var docXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    docXml += '<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">';
+    docXml += '<w:body>' + body + '<w:sectPr><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080"/></w:sectPr></w:body></w:document>';
+
+    var stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>';
+
+    var contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    contentTypes += '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">';
+    contentTypes += '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>';
+    contentTypes += '<Default Extension="xml" ContentType="application/xml"/>';
+    contentTypes += '<Default Extension="jpeg" ContentType="image/jpeg"/>';
+    contentTypes += '<Default Extension="jpg" ContentType="image/jpeg"/>';
+    contentTypes += '<Default Extension="png" ContentType="image/png"/>';
+    contentTypes += '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>';
+    contentTypes += '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>';
+    contentTypes += '</Types>';
+
+    var rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    rootRels += '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+    rootRels += '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>';
+    rootRels += '</Relationships>';
+
+    if (typeof JSZip === "undefined") { alert("Loading export library, please try again in a moment."); return; }
+    var zip = new JSZip();
+    zip.file("[Content_Types].xml", contentTypes);
+    zip.file("_rels/.rels", rootRels);
+    zip.file("word/document.xml", docXml);
+    zip.file("word/styles.xml", stylesXml);
+    zip.file("word/_rels/document.xml.rels", relsXml);
+    for (var i = 0; i < images.length; i++) {
+      zip.file("word/media/image" + images[i].id + "." + images[i].ext, images[i].base64, {base64: true});
+    }
+    zip.generateAsync({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"})
+      .then(function(blob) {
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "Flemington_Inspection_Report.docx";
+        a.click();
+        setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
+      });
   }
 
-  // Build relationships XML
-  var relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-  relsXml += '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
-  relsXml += '<Relationship Id="rId0" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>';
-  for (var i = 0; i < images.length; i++) {
-    relsXml += '<Relationship Id="rId' + images[i].id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image' + images[i].id + '.' + images[i].ext + '"/>';
-  }
-  relsXml += '</Relationships>';
-
-  // Build document.xml
-  var docXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-  docXml += '<w:document xmlns:wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:w10="urn:schemas-microsoft-com:office:word" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup" xmlns:wpi="http://schemas.microsoft.com/office/word/2010/wordprocessingInk" xmlns:wne="http://schemas.microsoft.com/office/word/2006/wordml" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" mc:Ignorable="w14 wp14">';
-  docXml += '<w:body>';
-  docXml += '<w:sectPr><w:pgMar w:top="1080" w:right="1080" w:bottom="1080" w:left="1080"/></w:sectPr>';
-  docXml += body;
-  docXml += '</w:body></w:document>';
-
-  // Styles XML (minimal)
-  var stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:rPrDefault></w:docDefaults></w:styles>';
-
-  // [Content_Types].xml
-  var contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-  contentTypes += '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">';
-  contentTypes += '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>';
-  contentTypes += '<Default Extension="xml" ContentType="application/xml"/>';
-  contentTypes += '<Default Extension="jpeg" ContentType="image/jpeg"/>';
-  contentTypes += '<Default Extension="jpg" ContentType="image/jpeg"/>';
-  contentTypes += '<Default Extension="png" ContentType="image/png"/>';
-  contentTypes += '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>';
-  contentTypes += '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>';
-  contentTypes += '</Types>';
-
-  // _rels/.rels
-  var rootRels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-  rootRels += '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
-  rootRels += '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>';
-  rootRels += '</Relationships>';
-
-  // Use JSZip to assemble the .docx
-  if (typeof JSZip === "undefined") {
-    alert("Loading export library, please try again in a moment.");
-    return;
-  }
-  var zip = new JSZip();
-  zip.file("[Content_Types].xml", contentTypes);
-  zip.file("_rels/.rels", rootRels);
-  zip.file("word/document.xml", docXml);
-  zip.file("word/styles.xml", stylesXml);
-  zip.file("word/_rels/document.xml.rels", relsXml);
-
-  for (var i = 0; i < images.length; i++) {
-    var img = images[i];
-    var b64 = img.base64;
-    zip.file("word/media/image" + img.id + "." + img.ext, b64, {base64: true});
-  }
-
-  zip.generateAsync({type:"blob", mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document"})
-    .then(function(blob) {
-      var url = URL.createObjectURL(blob);
-      var a = document.createElement("a");
-      a.href = url;
-      a.download = "Flemington_Inspection_Report.docx";
-      a.click();
-      setTimeout(function() { URL.revokeObjectURL(url); }, 5000);
-    });
+  processQueue(0, function() {
+    buildWordDoc(images, stableImgMap);
+  });
 }
 
 // ---- INIT ----
